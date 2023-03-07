@@ -1,7 +1,7 @@
 {
   "type": "module",
   "name": "Sauvegardes7Zip",
-  "version": "5.0.0",
+  "version": "5.1.0",
   "description": "",
   "main": "Sauvegardes7Zip.js",
   "dependencies": {
@@ -28,6 +28,7 @@
     "core-js-compat": "^3.25.3",
     "debug": "^4.3.4",
     "define-properties": "^1.1.4",
+    "dotenv": "^16.0.3",
     "electron-to-chromium": "^1.4.269",
     "escalade": "^3.1.1",
     "escape-string-regexp": "^1.0.5",

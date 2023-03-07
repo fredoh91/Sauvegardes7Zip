@@ -1,13 +1,16 @@
 import { createArchive } from 'node-7z-archive';
 import * as mysql from 'mysql';
+import * as dotenv from 'dotenv'
+
+dotenv.config()
 
 const myquery = 'SELECT * FROM liste_fichiers WHERE liste_fichiers.actif = 1'
 
 const ident_connect = {
-  host: 'localhost',
-  user: 'root',
-  password: '8AwjHAJ7g3XwBH4_',
-  database: 'cron_sauvegardes'
+  host: process.env.HOST,
+  user: process.env.USER,
+  password: process.env.PASSWORD,
+  database: process.env.DATABASE
 }
 
 const connection = mysql.createConnection(ident_connect);
