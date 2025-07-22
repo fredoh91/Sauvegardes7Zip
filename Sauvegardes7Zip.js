@@ -1,6 +1,8 @@
-import { createArchive } from 'node-7z-archive';
+import Seven from 'node-7z';
 import * as mysql from 'mysql';
 import * as dotenv from 'dotenv'
+import fs from 'fs';
+import path from 'path';
 
 dotenv.config()
 
@@ -79,8 +81,33 @@ function sauvegarde_today(sTypeSave) {
   return false
 }
 
-function add_7z(filecompressee, fileEntree, id) {
-  // compresse le fichier fileentree vers filecompressee et met à jour la ligne id de la base avec le timestamp du moment
+function copyDirSync(src, dest) {
+  if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
+  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      copyDirSync(srcPath, destPath);
+    } else {
+      fs.copyFileSync(srcPath, destPath);
+    }
+  }
+}
+
+function removeDirSync(dir) {
+  if (!fs.existsSync(dir)) return;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const entryPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      removeDirSync(entryPath);
+    } else {
+      fs.unlinkSync(entryPath);
+    }
+  }
+  fs.rmdirSync(dir);
+}
+
+function add_7z(filecompressee, fileEntree, id, tempDirToDelete = null) {
   let now = new Date();
   let annee = now.getFullYear();
   let mois = ('0' + (now.getMonth() + 1)).slice(-2);
@@ -90,48 +117,53 @@ function add_7z(filecompressee, fileEntree, id) {
   let seconde = ('0' + now.getSeconds()).slice(-2);
   let file_unique = "_" + annee + "_" + mois + "_" + jour + "_" + heure + "_" + minute + "_" + seconde;
   let ext_fic = '7z';
-  // console.log ('fileEntree',fileEntree);
-  //   if (TypeFichierRepertoire === 'Repertoire') {
-  //     createArchive(filecompressee + file_unique + "." + ext_fic,
-  //       fileEntree + '*',
-  //       { y: true, ssw: true }
-  //     )
-  //       .progress(function (files) {
-  //       })
 
-  //       .then(function () {
-  //         maj_date_traitement(id)
-  //         maj_statut_derniere_sauvegarde(id, 'OK')
-  //       })
-  //       .catch(function (err) {
-  //         if (err === undefined) {
-  //           maj_statut_derniere_sauvegarde(id, 'Erreur, sauvegarde non-effectuée')
-  //         } else {
-  //           maj_statut_derniere_sauvegarde(id, err)
-  //         }
-  //       });
-  //   } else if (TypeFichierRepertoire === 'Fichier') {
-  createArchive(filecompressee + file_unique + "." + ext_fic,
-    fileEntree,
-    { y: true, ssw: true }
-  )
-    .progress(function (files) {
-    })
+  const archivePath = filecompressee + file_unique + "." + ext_fic;
 
-    .then(function () {
-      maj_date_traitement(id)
-      maj_statut_derniere_sauvegarde(id, 'OK')
-    })
-    .catch(function (err) {
-      if (err === undefined) {
-        maj_statut_derniere_sauvegarde(id, 'Erreur, sauvegarde non-effectuée')
-      } else {
-        maj_statut_derniere_sauvegarde(id, err)
-      }
-    });
-  // } else {
-  //   console.log('TypeFichierRepertoire non renseigné');
-  // }
+  // Ajout debug détaillé
+  // console.log(`[DEBUG] add_7z(id=${id})`);
+  // console.log(`[DEBUG] Chemin fichier à compresser (fileEntree) : "${fileEntree}"`);
+  // console.log(`[DEBUG] Chemin archive cible (archivePath) : "${archivePath}"`);
+  // console.log(`[DEBUG] Existe source ?`, fs.existsSync(fileEntree.replace(/\\\*$/, '')));
+  // console.log(`[DEBUG] Dossier cible existe ?`, fs.existsSync(path.dirname(archivePath)));
+
+  const archivePathFixed = archivePath.replace(/\\/g, '/');
+  const fileEntreeFixed = fileEntree.replace(/\\/g, '/');
+  // console.log(`[DEBUG] archivePathFixed = ${archivePathFixed}`);
+  // console.log(`[DEBUG] fileEntreeFixed = ${fileEntreeFixed}`);
+
+  const myStream = Seven.add(
+    archivePathFixed,
+    [fileEntreeFixed],
+    { $bin: '7z', recursive: true, overwrite: 'a', ssw: true }
+  );
+
+  // myStream.on('progress', (progress) => {
+  //   console.log(`[DEBUG] Progression de la compression pour id=${id} :`, progress);
+  // });
+  myStream.on('end', () => {
+    // console.log(`[DEBUG] Compression terminée pour id=${id}`);
+    if (tempDirToDelete && fs.existsSync(tempDirToDelete)) {
+      // console.log(`[DEBUG] Suppression du répertoire temporaire : ${tempDirToDelete}`);
+      removeDirSync(tempDirToDelete);
+      // console.log(`[DEBUG] Répertoire temporaire supprimé`);
+    }
+    maj_date_traitement(id)
+    maj_statut_derniere_sauvegarde(id, 'OK')
+  });
+  myStream.on('error', (err) => {
+    // console.error(`[DEBUG] Erreur lors de la compression pour id=${id} :`, err);
+    if (tempDirToDelete && fs.existsSync(tempDirToDelete)) {
+      // console.log(`[DEBUG] Suppression du répertoire temporaire après erreur : ${tempDirToDelete}`);
+      removeDirSync(tempDirToDelete);
+      // console.log(`[DEBUG] Répertoire temporaire supprimé`);
+    }
+    if (err === undefined) {
+      maj_statut_derniere_sauvegarde(id, 'Erreur, sauvegarde non-effectuée')
+    } else {
+      maj_statut_derniere_sauvegarde(id, err.toString())
+    }
+  });
 }
 
 function maj_date_traitement(id) {
@@ -145,9 +177,8 @@ function maj_date_traitement(id) {
   connection_2.end();
 }
 function maj_statut_derniere_sauvegarde(id, maj) {
-  // met à jour la ligne dans la base avec le timestamp en cours
+  if (!maj) maj = 'Valeur non définie';
   const connection_2 = mysql.createConnection(ident_connect);
-  // var myquery_maj = 'UPDATE liste_fichiers SET statut_derniere_sauvegarde = ' + error + ' WHERE id = ' + id
   let myquery_maj = 'UPDATE liste_fichiers SET statut_derniere_sauvegarde = ? WHERE id = ?'
   let data = [maj, id];
   connection_2.connect();
@@ -158,24 +189,30 @@ function maj_statut_derniere_sauvegarde(id, maj) {
 }
 
 function trait_tab(item, index, array) {
-  // let fileentree = item['path_source'] + "\\" + item['nom_fichier'] + "." + item['ext_fichier']
   let fileentree = '';
-  if (item['TypeFichierRepertoire'] === 'Repertoire') {
-    fileentree = item['path_source'] + "\\" + '*'
-  } else if (item['TypeFichierRepertoire'] === 'Fichier') {
-    fileentree = item['path_source'] + "\\" + item['nom_fichier'] + "." + item['ext_fichier']
-  } else {
-    console.log('TypeFichierRepertoire non renseigné');
-  }
-  let filecompressee = item['path_cible'] + "\\" + item['nom_fichier']
-  let ext_fic = '7z'
+  let filecompressee = item['path_cible'] + "\\" + item['nom_fichier'];
+  let ext_fic = '7z';
 
-  // vérif si sauvegarde programmée matin et/ou aprem
-  if ((AM_PM() == 'AM' && item['AM']) || (AM_PM() == 'PM' && item['PM'])) {
-    // vérif si le jour en cours correspond a celui spécifié dans la base
-    if (sauvegarde_today(item['JourSauvegarde'])) {
-      add_7z(filecompressee, fileentree, item['id'])
+  if (item['TypeFichierRepertoire'] === 'Repertoire') {
+    fileentree = item['path_source'] + "\\" + '*';
+    // console.log(`[DEBUG] Traitement de l'élément id=${item['id']} - type=Repertoire`);
+    add_7z(filecompressee, fileentree, item['id']);
+  } else if (item['TypeFichierRepertoire'] === 'Fichier') {
+    fileentree = item['path_source'] + "\\" + item['nom_fichier'] + "." + item['ext_fichier'];
+    // console.log(`[DEBUG] Traitement de l'élément id=${item['id']} - type=Fichier`);
+    add_7z(filecompressee, fileentree, item['id']);
+  } else if (item['TypeFichierRepertoire'] === 'Repertoire_MySQL') {
+    const tempDir = path.join(item['path_cible'], 'data');
+    // console.log(`[DEBUG] Création du répertoire temporaire MySQL : ${tempDir}`);
+    if (fs.existsSync(tempDir)) {
+      // console.log(`[DEBUG] Suppression de l'ancien répertoire temporaire data`);
+      removeDirSync(tempDir);
     }
+    copyDirSync(item['path_source'], tempDir);
+    // console.log(`[DEBUG] Copie du répertoire MySQL terminée`);
+    add_7z(filecompressee, tempDir, item['id'], tempDir);
+  } else {
+    // console.log('[DEBUG] TypeFichierRepertoire non renseigné pour id=' + item['id']);
   }
 }
 
