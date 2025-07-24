@@ -3,6 +3,8 @@ import * as mysql from 'mysql';
 import * as dotenv from 'dotenv'
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
+import { execSync } from 'child_process';
 
 dotenv.config()
 
@@ -119,51 +121,76 @@ function add_7z(filecompressee, fileEntree, id, tempDirToDelete = null) {
   let ext_fic = '7z';
 
   const archivePath = filecompressee + file_unique + "." + ext_fic;
-
-  // Ajout debug détaillé
-  // console.log(`[DEBUG] add_7z(id=${id})`);
-  // console.log(`[DEBUG] Chemin fichier à compresser (fileEntree) : "${fileEntree}"`);
-  // console.log(`[DEBUG] Chemin archive cible (archivePath) : "${archivePath}"`);
-  // console.log(`[DEBUG] Existe source ?`, fs.existsSync(fileEntree.replace(/\\\*$/, '')));
-  // console.log(`[DEBUG] Dossier cible existe ?`, fs.existsSync(path.dirname(archivePath)));
-
-  const archivePathFixed = archivePath.replace(/\\/g, '/');
-  const fileEntreeFixed = fileEntree.replace(/\\/g, '/');
-  // console.log(`[DEBUG] archivePathFixed = ${archivePathFixed}`);
-  // console.log(`[DEBUG] fileEntreeFixed = ${fileEntreeFixed}`);
-
-  const myStream = Seven.add(
-    archivePathFixed,
-    [fileEntreeFixed],
-    { $bin: '7z', recursive: true, overwrite: 'a', ssw: true }
-  );
-
-  // myStream.on('progress', (progress) => {
-  //   console.log(`[DEBUG] Progression de la compression pour id=${id} :`, progress);
-  // });
-  myStream.on('end', () => {
-    // console.log(`[DEBUG] Compression terminée pour id=${id}`);
-    if (tempDirToDelete && fs.existsSync(tempDirToDelete)) {
-      // console.log(`[DEBUG] Suppression du répertoire temporaire : ${tempDirToDelete}`);
-      removeDirSync(tempDirToDelete);
-      // console.log(`[DEBUG] Répertoire temporaire supprimé`);
-    }
-    maj_date_traitement(id)
-    maj_statut_derniere_sauvegarde(id, 'OK')
-  });
-  myStream.on('error', (err) => {
-    // console.error(`[DEBUG] Erreur lors de la compression pour id=${id} :`, err);
-    if (tempDirToDelete && fs.existsSync(tempDirToDelete)) {
-      // console.log(`[DEBUG] Suppression du répertoire temporaire après erreur : ${tempDirToDelete}`);
-      removeDirSync(tempDirToDelete);
-      // console.log(`[DEBUG] Répertoire temporaire supprimé`);
-    }
-    if (err === undefined) {
-      maj_statut_derniere_sauvegarde(id, 'Erreur, sauvegarde non-effectuée')
+  const isDirectory = fs.lstatSync(fileEntree).isDirectory();
+  
+  // Vérification de l'existence du fichier/répertoire source
+  if (!fs.existsSync(fileEntree)) {
+    console.error(`ERREUR: La source n'existe pas: ${fileEntree}`);
+    return;
+  }
+  
+  // Création du répertoire de destination s'il n'existe pas
+  const destDir = path.dirname(archivePath);
+  if (!fs.existsSync(destDir)) {
+    fs.mkdirSync(destDir, { recursive: true });
+  }
+  
+  try {
+    if (isDirectory) {
+      // Cas d'un répertoire - on utilise directement 7z sans copie préalable
+      console.log(`[INFO] Compression du répertoire ${fileEntree}...`);
+      const cmd = `"C:\\Program Files\\7-Zip\\7z.exe" a -t7z -mx=5 -ssw -y "${archivePath}" "${fileEntree}\\*"`;
+      execSync(cmd, { stdio: 'inherit' });
     } else {
-      maj_statut_derniere_sauvegarde(id, err.toString())
+      // Cas d'un fichier - on fait une copie temporaire pour éviter les problèmes de verrouillage
+      console.log(`[INFO] Compression du fichier ${fileEntree}...`);
+      
+      // Création d'un fichier temporaire local
+      const tempFile = path.join(os.tmpdir(), `temp_${Date.now()}_${path.basename(fileEntree)}`);
+      
+      try {
+        // Copie du fichier source vers le répertoire temporaire
+        fs.copyFileSync(fileEntree, tempFile);
+        
+        if (!fs.existsSync(tempFile)) {
+          throw new Error('La copie du fichier a échoué');
+        }
+        
+        // Compression du fichier temporaire
+        const fileNameInArchive = path.basename(fileEntree);
+        const tempDir = path.dirname(tempFile);
+        const renamedTempFile = path.join(tempDir, fileNameInArchive);
+        
+        // Renommage pour avoir le bon nom dans l'archive
+        if (fs.existsSync(renamedTempFile)) {
+          fs.unlinkSync(renamedTempFile);
+        }
+        fs.renameSync(tempFile, renamedTempFile);
+        
+        // Compression
+        const cmd = `cd "${tempDir}" && "C:\\Program Files\\7-Zip\\7z.exe" a -t7z -mx=5 -ssw -y "${archivePath}" "${fileNameInArchive}"`;
+        execSync(cmd, { stdio: 'inherit' });
+        
+        // Nettoyage
+        if (fs.existsSync(renamedTempFile)) {
+          fs.unlinkSync(renamedTempFile);
+        }
+      } finally {
+        // Assurance du nettoyage en cas d'erreur
+        if (fs.existsSync(tempFile)) {
+          fs.unlinkSync(tempFile);
+        }
+      }
     }
-  });
+  } catch (error) {
+    console.error('Erreur lors de la création de l\'archive:', error);
+    maj_statut_derniere_sauvegarde(id, 'ERREUR: ' + error.message);
+    
+    if (tempDirToDelete && fs.existsSync(tempDirToDelete)) {
+      console.log(`Suppression du répertoire temporaire après erreur : ${tempDirToDelete}`);
+      removeDirSync(tempDirToDelete);
+    }
+  }
 }
 
 function maj_date_traitement(id) {
@@ -199,18 +226,64 @@ function trait_tab(item, index, array) {
     add_7z(filecompressee, fileentree, item['id']);
   } else if (item['TypeFichierRepertoire'] === 'Fichier') {
     fileentree = item['path_source'] + "\\" + item['nom_fichier'] + "." + item['ext_fichier'];
-    // console.log(`[DEBUG] Traitement de l'élément id=${item['id']} - type=Fichier`);
+    console.log(`[DEBUG] Traitement de l'élément id=${item['id']} - type=Fichier`);
     add_7z(filecompressee, fileentree, item['id']);
   } else if (item['TypeFichierRepertoire'] === 'Repertoire_MySQL') {
-    const tempDir = path.join(item['path_cible'], 'data');
-    // console.log(`[DEBUG] Création du répertoire temporaire MySQL : ${tempDir}`);
-    if (fs.existsSync(tempDir)) {
-      // console.log(`[DEBUG] Suppression de l'ancien répertoire temporaire data`);
-      removeDirSync(tempDir);
+    console.log(`[DEBUG] Traitement de l'élément id=${item['id']} - type=Repertoire_MySQL`);
+    
+    // Vérification que le répertoire source existe
+    if (!fs.existsSync(item['path_source'])) {
+      console.error(`[ERREUR] Le répertoire source n'existe pas: ${item['path_source']}`);
+      maj_statut_derniere_sauvegarde(item['id'], `ERREUR: Le répertoire source n'existe pas`);
+      return;
     }
-    copyDirSync(item['path_source'], tempDir);
-    // console.log(`[DEBUG] Copie du répertoire MySQL terminée`);
-    add_7z(filecompressee, tempDir, item['id'], tempDir);
+    
+    // Création d'un répertoire temporaire unique dans le dossier temporaire système
+    const tempDir = path.join(os.tmpdir(), `mysql_backup_${Date.now()}`);
+    const tempDataDir = path.join(tempDir, 'data');
+    
+    try {
+      // Création du répertoire temporaire
+      fs.mkdirSync(tempDir, { recursive: true });
+      console.log(`[INFO] Répertoire temporaire créé: ${tempDir}`);
+      
+      // Copie du répertoire source vers le répertoire temporaire avec fs.cpSync (meilleure gestion des permissions)
+      console.log(`[INFO] Copie de ${item['path_source']} vers ${tempDataDir}...`);
+      
+      // Utilisation de fs.cpSync si disponible (Node.js 16.7.0+), sinon utiliser copyDirSync
+      if (fs.cpSync) {
+        fs.cpSync(item['path_source'], tempDataDir, { 
+          recursive: true,
+          force: true,
+          errorOnExist: false
+        });
+      } else {
+        // Méthode de repli pour les versions plus anciennes
+        copyDirSync(item['path_source'], tempDataDir);
+      }
+      
+      // Vérification que la copie a réussi
+      if (!fs.existsSync(tempDataDir) || fs.readdirSync(tempDataDir).length === 0) {
+        throw new Error('Échec de la copie du répertoire MySQL - le répertoire de destination est vide');
+      }
+      
+      console.log(`[INFO] Compression du répertoire MySQL...`);
+      // On utilise le répertoire parent pour éviter les problèmes de droits
+      add_7z(filecompressee, tempDir, item['id'], tempDir);
+      
+    } catch (error) {
+      console.error(`[ERREUR] Erreur lors de la sauvegarde MySQL:`, error);
+      // Nettoyage en cas d'erreur
+      if (fs.existsSync(tempDir)) {
+        try {
+          removeDirSync(tempDir);
+          console.log(`[INFO] Nettoyage du répertoire temporaire après erreur`);
+        } catch (cleanupError) {
+          console.error(`[ERREUR] Impossible de nettoyer le répertoire temporaire:`, cleanupError);
+        }
+      }
+      maj_statut_derniere_sauvegarde(item['id'], `ERREUR: ${error.message}`);
+    }
   } else {
     // console.log('[DEBUG] TypeFichierRepertoire non renseigné pour id=' + item['id']);
   }
