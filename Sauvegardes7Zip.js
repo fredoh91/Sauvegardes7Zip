@@ -215,7 +215,7 @@ function maj_statut_derniere_sauvegarde(id, maj) {
   connection_2.end();
 }
 
-function trait_tab(item, index, array) {
+async function trait_tab(item, index, array) {
   let fileentree = '';
   let filecompressee = item['path_cible'] + "\\" + item['nom_fichier'];
   let ext_fic = '7z';
@@ -224,10 +224,12 @@ function trait_tab(item, index, array) {
     fileentree = item['path_source'] + "\\" + '*';
     // console.log(`[DEBUG] Traitement de l'élément id=${item['id']} - type=Repertoire`);
     add_7z(filecompressee, fileentree, item['id']);
+    maj_statut_derniere_sauvegarde(item['id'], 'OK');
   } else if (item['TypeFichierRepertoire'] === 'Fichier') {
     fileentree = item['path_source'] + "\\" + item['nom_fichier'] + "." + item['ext_fichier'];
     console.log(`[DEBUG] Traitement de l'élément id=${item['id']} - type=Fichier`);
     add_7z(filecompressee, fileentree, item['id']);
+    maj_statut_derniere_sauvegarde(item['id'], 'OK');
   } else if (item['TypeFichierRepertoire'] === 'Repertoire_MySQL') {
     console.log(`[DEBUG] Traitement de l'élément id=${item['id']} - type=Repertoire_MySQL`);
     
@@ -245,10 +247,10 @@ function trait_tab(item, index, array) {
     try {
       // Création du répertoire temporaire
       fs.mkdirSync(tempDir, { recursive: true });
-      console.log(`[INFO] Répertoire temporaire créé: ${tempDir}`);
+      // console.log(`[INFO] Répertoire temporaire créé: ${tempDir}`);
       
       // Copie du répertoire source vers le répertoire temporaire avec fs.cpSync (meilleure gestion des permissions)
-      console.log(`[INFO] Copie de ${item['path_source']} vers ${tempDataDir}...`);
+      // console.log(`[INFO] Copie de ${item['path_source']} vers ${tempDataDir}...`);
       
       // Utilisation de fs.cpSync si disponible (Node.js 16.7.0+), sinon utiliser copyDirSync
       if (fs.cpSync) {
@@ -267,13 +269,13 @@ function trait_tab(item, index, array) {
         throw new Error('Échec de la copie du répertoire MySQL - le répertoire de destination est vide');
       }
       
-      console.log(`[INFO] Compression du répertoire MySQL...`);
+      // console.log(`[INFO] Compression du répertoire MySQL...`);
       // On utilise le répertoire parent pour éviter les problèmes de droits
       add_7z(filecompressee, tempDir, item['id'], tempDir);
+      maj_statut_derniere_sauvegarde(item['id'], 'OK');
       
     } catch (error) {
       console.error(`[ERREUR] Erreur lors de la sauvegarde MySQL:`, error);
-      // Nettoyage en cas d'erreur
       if (fs.existsSync(tempDir)) {
         try {
           removeDirSync(tempDir);
@@ -290,9 +292,9 @@ function trait_tab(item, index, array) {
 }
 
 connection.connect();
-connection.query(myquery, function (error, results, fields) {
+connection.query(myquery, async function (error, results, fields) {
   if (error) throw error;
-  results.forEach(trait_tab)
-  console.log('Sauvegarde terminée')
+  await Promise.all(results.map(trait_tab));
+  console.log('Sauvegarde terminée');
 });
 connection.end();

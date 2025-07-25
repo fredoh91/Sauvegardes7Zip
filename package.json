@@ -5,13 +5,19 @@
   "description": "",
   "main": "Sauvegardes7Zip.js",
   "dependencies": {
-    "dotenv": "^16.0.3",
+    "dotenv": "^16.6.1",
     "mysql": "^2.18.1",
-    "node-7z": "^3.0.0"
+    "mysql2": "^3.14.2",
+    "node-7z": "^3.0.0",
+    "winston": "^3.17.0"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "vitest",
+    "start": "node main.js"
   },
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
 }
