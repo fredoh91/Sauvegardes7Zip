@@ -1,20 +1,75 @@
-import SevenZip from 'node-7z'; // Importe directement l'objet SevenZip
+import SevenZip from 'node-7z';
 import logger from './logger.js';
 
 /**
- * Compresse un fichier en utilisant 7zip avec le paramètre -ssw.
+ * Compresse un fichier en utilisant 7zip.
  * @param {string} sourcePath - Le chemin complet du fichier source à compresser.
- * @param {string} outputPath - Le chemin complet de l'archive de destination (incluant le nom du fichier .7z).
+ * @param {string} outputPath - Le chemin complet de l'archive de destination.
+ * @param {object} options - Les options pour node-7z (par exemple, { ssw: true }).
+ * @param {function(number): void} [onProgress] - Callback pour suivre la progression (en pourcentage).
  * @returns {Promise<void>} Une promesse qui se résout lorsque la compression est terminée.
  */
-export async function compressFile(sourcePath, outputPath) {
+export function compressFile(sourcePath, outputPath, options = {}, onProgress) {
   logger.info(`Début de la compression du fichier: ${sourcePath} vers ${outputPath}`);
-  try {
-    // Appel direct de la méthode add sur l'objet SevenZip importé
-    await SevenZip.add(outputPath, sourcePath, { ssw: true });
-    logger.info(`Compression réussie: ${sourcePath} vers ${outputPath}`);
-  } catch (error) {
-    logger.error(`Erreur lors de la compression du fichier ${sourcePath}:`, error);
-    throw error;
-  }
+  
+  const sevenZipOptions = { ssw: true, ...options };
+
+  return new Promise((resolve, reject) => {
+    const stream = SevenZip.add(outputPath, sourcePath, sevenZipOptions);
+
+    if (onProgress) {
+      stream.on('progress', (progress) => {
+        onProgress(progress.percent);
+      });
+    }
+
+    stream.on('end', () => {
+      // Assure que la barre de progression atteint 100% à la fin
+      if (onProgress) onProgress(100);
+      logger.info(`Compression réussie: ${sourcePath} vers ${outputPath}`);
+      resolve();
+    });
+
+    stream.on('error', (error) => {
+      logger.error(`Erreur lors de la compression du fichier ${sourcePath}:`, error);
+      reject(error);
+    });
+  });
+}
+
+/**
+ * Compresse le contenu d'un répertoire.
+ * @param {string} sourcePath - Le chemin du répertoire à compresser.
+ * @param {string} outputPath - Le chemin de l'archive de sortie.
+ * @param {object} options - Les options pour node-7z (par exemple, { ssw: true, cwd: '...' }).
+ * @param {function(number): void} [onProgress] - Callback pour suivre la progression (en pourcentage).
+ * @returns {Promise<void>}
+ */
+export function compressDirectory(sourcePath, outputPath, options = {}, onProgress) {
+    logger.info(`Début de la compression du répertoire: ${sourcePath} vers ${outputPath}`);
+    
+    const sevenZipOptions = { ssw: true, ...options };
+
+    return new Promise((resolve, reject) => {
+        const stream = SevenZip.add(outputPath, sourcePath, sevenZipOptions);
+
+        if (onProgress) {
+          stream.on('progress', (progress) => {
+            console.log(`7z Progress: ${progress.percent}%`); // Debug log
+            onProgress(progress.percent);
+          });
+        }
+
+        stream.on('end', () => {
+            // Assure que la barre de progression atteint 100% à la fin
+            if (onProgress) onProgress(100);
+            logger.info(`Compression du répertoire réussie: ${sourcePath} vers ${outputPath}`);
+            resolve();
+        });
+        
+        stream.on('error', (error) => {
+            logger.error(`Erreur lors de la compression du répertoire ${sourcePath}:`, error);
+            reject(error);
+        });
+    });
 }

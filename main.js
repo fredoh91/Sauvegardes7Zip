@@ -2,7 +2,7 @@ import 'dotenv/config'; // Charge les variables d'environnement
 import { getBackupItems } from './src/backupService.js';
 import logger from './src/logger.js';
 import pool from './src/database.js'; // Importe le pool de connexions
-import { processFileBackup } from './src/backupProcessor.js'; // Importe la fonction de traitement des fichiers
+import { processFileBackup, processMysqlBackup } from './src/backupProcessor.js'; // Importe la fonction de traitement des fichiers
 import { isBackupDueToday } from './src/backupFilter.js'; // Importe la fonction de filtrage
 import path from 'path'; // Importe le module path
 
@@ -23,6 +23,14 @@ async function main() {
         case 'Fichier':
           logger.info(`Traitement de l'élément de type 'fichier': ${item.nom_fichier}.${item.ext_fichier}`);
           await processFileBackup(item, destinationPath);
+          break;
+        case 'Répertoire':
+          logger.info(`Traitement de l'élément de type 'répertoire', pas encore implémenté: ${item.nom_fichier}`);
+          // await processDirectoryBackup(item, destinationPath);
+          break;
+        case 'Repertoire_MySQL':
+          logger.info(`Traitement de l'élément de type 'Repertoire_MySQL': ${item.nom_fichier}`);
+          await processMysqlBackup(item, destinationPath);
           break;
         // D'autres types de sauvegarde seront ajoutés ici plus tard
         default:
