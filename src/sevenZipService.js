@@ -13,6 +13,9 @@ export function compressFile(sourcePath, outputPath, options = {}, onProgress) {
   logger.info(`Début de la compression du fichier: ${sourcePath} vers ${outputPath}`);
   
   const sevenZipOptions = { ssw: true, ...options };
+  if (onProgress) {
+    sevenZipOptions.$progress = true;
+  }
 
   return new Promise((resolve, reject) => {
     const stream = SevenZip.add(outputPath, sourcePath, sevenZipOptions);
@@ -49,13 +52,16 @@ export function compressDirectory(sourcePath, outputPath, options = {}, onProgre
     logger.info(`Début de la compression du répertoire: ${sourcePath} vers ${outputPath}`);
     
     const sevenZipOptions = { ssw: true, ...options };
+    if (onProgress) {
+        sevenZipOptions.$progress = true;
+    }
 
     return new Promise((resolve, reject) => {
         const stream = SevenZip.add(outputPath, sourcePath, sevenZipOptions);
 
         if (onProgress) {
+          // logger.info('Attaching progress handler to 7z stream');
           stream.on('progress', (progress) => {
-            console.log(`7z Progress: ${progress.percent}%`); // Debug log
             onProgress(progress.percent);
           });
         }
@@ -73,3 +79,6 @@ export function compressDirectory(sourcePath, outputPath, options = {}, onProgre
         });
     });
 }
+
+
+// ... (autres fonctions du service si nécessaire)

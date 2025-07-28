@@ -6,7 +6,7 @@ import { processFileBackup, processMysqlBackup } from './src/backupProcessor.js'
 import { isBackupDueToday } from './src/backupFilter.js'; // Importe la fonction de filtrage
 import path from 'path'; // Importe le module path
 
-async function main() {
+export async function main() {
   logger.info('Démarrage du script de sauvegarde...');
   try {
     const items = await getBackupItems();

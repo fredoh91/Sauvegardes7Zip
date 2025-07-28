@@ -25,8 +25,10 @@ describe('backupProcessor', () => {
 
     expect(utils.generateArchiveFilename).toHaveBeenCalledWith(item.nom_fichier);
     expect(sevenZipService.compressFile).toHaveBeenCalledWith(
-      path.join(item.path_source, `${item.nom_fichier}.${item.ext_fichier}`), // Utilise path.join
-      path.join(destinationPath, 'mock_archive.7z') // Utilise path.join
+      path.join(item.path_source, `${item.nom_fichier}.${item.ext_fichier}`),
+      path.join(destinationPath, 'mock_archive.7z'),
+      {},
+      expect.any(Function)
     );
   });
 
@@ -45,8 +47,10 @@ describe('backupProcessor', () => {
     await expect(processFileBackup(item, destinationPath)).rejects.toThrow(errorMessage);
     expect(utils.generateArchiveFilename).toHaveBeenCalledWith(item.nom_fichier);
     expect(sevenZipService.compressFile).toHaveBeenCalledWith(
-      path.join(item.path_source, `${item.nom_fichier}.${item.ext_fichier}`), // Utilise path.join
-      path.join(destinationPath, 'mock_archive.7z') // Utilise path.join
+      path.join(item.path_source, `${item.nom_fichier}.${item.ext_fichier}`),
+      path.join(destinationPath, 'mock_archive.7z'),
+      {},
+      expect.any(Function)
     );
   });
 });
