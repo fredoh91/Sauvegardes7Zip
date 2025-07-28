@@ -1,4 +1,4 @@
-import pool from './database.js';
+import pool, { updateBackupStatus } from './database.js';
 import logger from './logger.js';
 import { processFileBackup, processMysqlBackup } from './backupProcessor.js';
 
@@ -24,6 +24,7 @@ export async function getBackupItems() {
  */
 export async function runBackups(items, destinationPath) {
   for (const item of items) {
+    let status = 'ECHEC'; // Statut par défaut en cas d'erreur
     try {
       switch (item.type) {
         case 'fichier':
@@ -36,8 +37,13 @@ export async function runBackups(items, destinationPath) {
         default:
           logger.warn(`Type de sauvegarde inconnu: ${item.type} pour l'élément ${item.nom_fichier}`);
       }
+      status = 'SUCCES'; // Si tout se passe bien, le statut est SUCCES
     } catch (error) {
       logger.error(`Erreur lors du traitement de l'élément ${item.nom_fichier}:`, error);
+      status = 'ECHEC'; // Confirme le statut ECHEC en cas d'erreur
+    } finally {
+      // Met à jour le statut de la sauvegarde dans la base de données
+      await updateBackupStatus(item.id, status);
     }
   }
 }

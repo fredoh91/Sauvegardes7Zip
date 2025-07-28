@@ -22,7 +22,9 @@ export async function processFileBackup(item, destinationPath) {
 
   logger.info(`Traitement de la sauvegarde du fichier: ${fullSourcePath}`);
 
+  let tempPath = null;
   try {
+    // Tentative de compression directe
     await compressFile(fullSourcePath, fullArchivePath, {}, (percent) => {
       showProgress('Compression', percent);
     });
@@ -30,8 +32,33 @@ export async function processFileBackup(item, destinationPath) {
     logger.info(`Sauvegarde du fichier ${fullSourcePath} terminée avec succès.`);
   } catch (error) {
     process.stdout.write('\n'); // Assure une nouvelle ligne en cas d'erreur
-    logger.error(`Échec de la sauvegarde du fichier ${fullSourcePath}:`, error);
-    throw error;
+    logger.warn(`Échec de la compression directe du fichier ${fullSourcePath}. Tentative de copie temporaire...`, error);
+
+    try {
+      await cleanOldTempDirectories();
+      tempPath = await createTempDirectory();
+      const tempFilePath = path.join(tempPath, `${item.nom_fichier}.${item.ext_fichier}`);
+
+      logger.info(`Copie du fichier ${fullSourcePath} vers ${tempFilePath}...`);
+    await fs.copyFile(fullSourcePath, tempFilePath); // Utilise fs.copyFile pour un seul fichier
+    logger.info(`Fichier copié avec succès vers ${tempFilePath}.`);
+
+      logger.info(`Compression du fichier copié depuis ${tempFilePath}...`);
+      await compressFile(tempFilePath, fullArchivePath, {}, (percent) => {
+        showProgress('Compression (copie temporaire)', percent);
+      });
+      process.stdout.write('\n');
+      logger.info(`Sauvegarde du fichier ${fullSourcePath} via copie temporaire terminée avec succès.`);
+    } catch (tempError) {
+      process.stdout.write('\n');
+      logger.error(`Échec de la sauvegarde du fichier ${fullSourcePath} même avec copie temporaire:`, tempError);
+      throw tempError; // Rejette l'erreur finale
+    }
+  } finally {
+    if (tempPath) {
+      logger.info(`Suppression du répertoire temporaire: ${tempPath}`);
+      await fs.rm(tempPath, { recursive: true, force: true });
+    }
   }
 }
 
